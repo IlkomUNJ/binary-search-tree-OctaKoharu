@@ -1,5 +1,7 @@
 use std::cell::RefCell;
 use std::rc::{Rc, Weak};
+use crate::structure::tree::{Node, NodeLink};
+
 
 pub type BstNodeLink = Rc<RefCell<BstNode>>;
 pub type WeakBstNodeLink = Weak<RefCell<BstNode>>;
@@ -11,6 +13,10 @@ pub struct BstNode {
     pub parent: Option<WeakBstNodeLink>,
     pub left: Option<BstNodeLink>,
     pub right: Option<BstNodeLink>,
+}
+
+pub struct BST {
+    pub root: Option<NodeLink>,
 }
 
 impl BstNode {
@@ -217,6 +223,106 @@ impl BstNode {
         match node {
             None => None,
             Some(x) => Some(x.upgrade().unwrap()),
+        }
+    }
+}
+
+impl BST {
+    pub fn new() -> Self {
+        BST { root: None }
+    }
+
+    pub fn tree_insert(&mut self, value: i32) {
+        let new_node = Node::new_nodelink(value);
+        let mut y: Option<NodeLink> = None;
+        let mut x = self.root.clone();
+
+        while let Some(node) = x.clone() {
+            y = x.clone();
+            if value < node.borrow().value {
+                x = node.borrow().left.clone();
+            } else {
+                x = node.borrow().right.clone();
+            }
+        }
+
+        if let Some(y_node) = y.clone() {
+            new_node.borrow_mut().parent = Some(Rc::downgrade(&y_node));
+            if value < y_node.borrow().value {
+                y_node.borrow_mut().left = Some(new_node);
+            } else {
+                y_node.borrow_mut().right = Some(new_node);
+            }
+        } else {
+            self.root = Some(new_node);
+        }
+    }
+
+    fn transplant(&mut self, u: &NodeLink, v: Option<NodeLink>) {
+        let u_parent = Node::upgrade_weak_to_strong(u.borrow().parent.clone());
+        if u_parent.is_none() {
+            self.root = v.clone();
+        } else if u_parent.as_ref().unwrap().borrow().left.as_ref().map(|left| Rc::ptr_eq(&u, left)).unwrap_or(false) {
+            u_parent.as_ref().unwrap().borrow_mut().left = v.clone();
+        } else {
+            u_parent.as_ref().unwrap().borrow_mut().right = v.clone();
+        }
+
+        if let Some(v_node) = v {
+            v_node.borrow_mut().parent = u.borrow().parent.clone();
+        }
+    }
+
+    pub fn tree_delete(&mut self, value: i32) {
+        let node_to_delete = self
+            .root
+            .clone()
+            .and_then(|n| n.borrow().get_node_by_value(value));
+
+        if let Some(z) = node_to_delete {
+            let z_left = z.borrow().left.clone();
+            let z_right = z.borrow().right.clone();
+
+            if z_left.is_none() {
+                self.transplant(&z, z_right.clone());
+            } else if z_right.is_none() {
+                self.transplant(&z, z_left.clone());
+            } else {
+                let mut y = z_right.clone().unwrap();
+                loop {
+                    let left = {
+                        let y_borrow = y.borrow();
+                        y_borrow.left.clone()
+                    };
+                
+                    match left {
+                        Some(left_node) => y = left_node,
+                        None => break,
+                    }
+                }                
+
+                if !Node::upgrade_weak_to_strong(y.borrow().parent.clone())
+    .as_ref()
+    .map(|parent| Rc::ptr_eq(parent, &z))
+    .unwrap_or(false)
+ {
+                    self.transplant(&y, y.borrow().right.clone());
+                    y.borrow_mut().right = z.borrow().right.clone();
+                    if let Some(r) = y.borrow().right.clone() {
+                        r.borrow_mut().parent = Some(Rc::downgrade(&y));
+                    }
+                }
+
+                self.transplant(&z, Some(y.clone()));
+                y.borrow_mut().left = z.borrow().left.clone();
+                let l = {
+                    let y_borrow = y.borrow();
+                    y_borrow.left.clone()
+                };
+                if let Some(left_node) = l {
+                    left_node.borrow_mut().parent = Some(Rc::downgrade(&y));
+                }                
+            }
         }
     }
 }
